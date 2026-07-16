@@ -9,42 +9,75 @@ const io = new Server(httpServer, {
   cors: { origin: "http://localhost:5173" },
 });
 
-const users = new Set<string>();
 // socket.id -> Yjs clientID, so a disconnect can clear that user's cursor
 const clientIds = new Map<string, number>();
 
-const doc = new Y.Doc();
+// roomId -> authoritative document. Created lazily the first time a room is joined.
+const docs = new Map<string, Y.Doc>();
+function getDoc(roomId: string): Y.Doc {
+  let doc = docs.get(roomId);
+  if (!doc) {
+    doc = new Y.Doc();
+    docs.set(roomId, doc);
+    // (Step 4: load persisted state here)
+  }
+  return doc;
+}
+
+// roomId -> set of connected socket ids, for the per-room presence list.
+const roomUsers = new Map<string, Set<string>>();
+function usersIn(roomId: string): Set<string> {
+  let set = roomUsers.get(roomId);
+  if (!set) {
+    set = new Set();
+    roomUsers.set(roomId, set);
+  }
+  return set;
+}
 
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  socket.emit("doc-sync", Y.encodeStateAsUpdate(doc));
-  users.add(socket.id);
-  io.emit("user-list", Array.from(users));
+  socket.on("join", (roomId: string) => {
+    socket.join(roomId);
+    socket.data.roomId = roomId;
+    // Send the newcomer the full current state so they're instantly in sync.
+    socket.emit("doc-sync", Y.encodeStateAsUpdate(getDoc(roomId)));
+    // Track presence for this room and tell everyone in it.
+    usersIn(roomId).add(socket.id);
+    io.to(roomId).emit("user-list", Array.from(usersIn(roomId)));
+  });
 
   socket.on("hello", (clientId: number) => {
     clientIds.set(socket.id, clientId);
   });
 
   socket.on("doc-update", (update) => {
-    Y.applyUpdate(doc, new Uint8Array(update));
-    socket.broadcast.emit("doc-update", update);
+    const roomId = socket.data.roomId as string | undefined;
+    if (!roomId) return;
+    Y.applyUpdate(getDoc(roomId), new Uint8Array(update)); // keep server authoritative
+    socket.to(roomId).emit("doc-update", update); // relay to everyone else in the room
   });
 
   // Awareness (cursors, selections, names) is ephemeral — the server just
-  // relays it and keeps no state of its own.
+  // relays it within the room and keeps no state of its own.
   socket.on("awareness", (update) => {
-    socket.broadcast.emit("awareness", update);
+    const roomId = socket.data.roomId as string | undefined;
+    if (!roomId) return;
+    socket.to(roomId).emit("awareness", update);
   });
 
   socket.on("disconnect", () => {
+    const roomId = socket.data.roomId as string | undefined;
     const clientId = clientIds.get(socket.id);
-    if (clientId !== undefined) {
-      socket.broadcast.emit("user-left", clientId);
-      clientIds.delete(socket.id);
+    if (roomId) {
+      if (clientId !== undefined) {
+        socket.to(roomId).emit("user-left", clientId);
+      }
+      usersIn(roomId).delete(socket.id);
+      io.to(roomId).emit("user-list", Array.from(usersIn(roomId)));
     }
-    users.delete(socket.id);
-    io.emit("user-list", Array.from(users));
+    clientIds.delete(socket.id);
   });
 });
 

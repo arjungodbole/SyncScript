@@ -17,6 +17,9 @@ const text = doc.getText("monaco");
 const awareness = new Awareness(doc);
 const socket = io("http://localhost:3001");
 
+// Room comes from the URL path: /doc/:id  ->  "room-1" by default.
+const roomId = window.location.pathname.split("/")[2] || "room-1";
+
 const USER_NAME = "Anonymous " + Math.floor(Math.random() * 100);
 const USER_COLOR =
   "#" +
@@ -63,9 +66,12 @@ function App() {
   }
 
   useEffect(() => {
-    // Tell the server which Yjs client we are, so it can evict our cursor from
-    // everyone else's editor the moment this socket drops.
-    const announce = () => socket.emit("hello", doc.clientID);
+    // On (re)connect: join our room so the server sends us its state, then tell
+    // it which Yjs client we are, so it can evict our cursor when this socket drops.
+    const announce = () => {
+      socket.emit("join", roomId);
+      socket.emit("hello", doc.clientID);
+    };
     socket.on("connect", announce);
     if (socket.connected) announce();
 
