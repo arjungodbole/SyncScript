@@ -15,7 +15,10 @@ import {
 const doc = new Y.Doc();
 const text = doc.getText("monaco");
 const awareness = new Awareness(doc);
-const socket = io("http://localhost:3001");
+// Baked in at build time by Vite, so this must be set on the static host that
+// builds the frontend — not on the server.
+const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
+const socket = io(SERVER_URL);
 
 // Room comes from the URL path: /doc/:id  ->  "room-1" by default.
 const roomId = window.location.pathname.split("/")[2] || "room-1";
@@ -52,8 +55,10 @@ function ensureCursorStyles() {
   });
 }
 
+type Peer = { clientID: number; name: string; color: string };
+
 function App() {
-  const [users, setUsers] = useState<string[]>([]);
+  const [peers, setPeers] = useState<Peer[]>([]);
 
   function handleEditorMount(editor: monaco.editor.IStandaloneCodeEditor) {
     const model = editor.getModel();
@@ -114,19 +119,37 @@ function App() {
       styledClients.delete(clientID);
     });
 
-    socket.on("user-list", (userList: string[]) => {
-      setUsers(userList);
-    });
+    // The presence list is derived from awareness — the same source that labels
+    // the cursors — so the header and the editor can never disagree about who
+    // is here. "change" fires only when a state is actually added/removed or
+    // its contents differ, so this doesn't re-render on every keystroke.
+    const onAwarenessChange = () => {
+      const next: Peer[] = [];
+      awareness.getStates().forEach((state, clientID) => {
+        const user = state.user as { name: string; color: string } | undefined;
+        if (user) next.push({ clientID, ...user });
+      });
+      // Keep ourselves pinned first, then alphabetical, so entries don't shuffle
+      // around as people join and leave.
+      next.sort((a, b) => {
+        if (a.clientID === doc.clientID) return -1;
+        if (b.clientID === doc.clientID) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      setPeers(next);
+    };
+    awareness.on("change", onAwarenessChange);
+    onAwarenessChange(); // seed with what's already known (at minimum, ourselves)
 
     return () => {
       doc.off("update", onDocUpdate);
       awareness.off("update", onAwarenessUpdate);
+      awareness.off("change", onAwarenessChange);
       socket.off("connect", announce);
       socket.off("doc-sync");
       socket.off("doc-update");
       socket.off("awareness");
       socket.off("user-left");
-      socket.off("user-list");
     };
   }, []);
 
@@ -135,10 +158,17 @@ function App() {
       <header className="header">
         <h1>SyncScript</h1>
         <div className="header-right">
-          <span>{users.length} online</span>
+          <span>{peers.length} online</span>
           <ul className="user-list">
-            {users.map((id) => (
-              <li key={id}>{id === socket.id ? "You" : id.slice(0, 6)}</li>
+            {peers.map((peer) => (
+              <li key={peer.clientID}>
+                <span
+                  className="user-dot"
+                  style={{ backgroundColor: peer.color }}
+                />
+                {peer.name}
+                {peer.clientID === doc.clientID && " (you)"}
+              </li>
             ))}
           </ul>
         </div>

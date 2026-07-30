@@ -8,12 +8,14 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "server": "tsx server/index.ts",
+    "server": "tsx --env-file=.env server/index.ts",
+    "start": "tsx server/index.ts",
     "test:convergence": "tsx scripts/convergence-test.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "socket.io": "^4.8.3",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",

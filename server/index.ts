@@ -3,10 +3,17 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import * as Y from "yjs";
 
+// Where the browser app is served from. Only this origin is allowed to open a
+// socket, so it has to be set to the deployed frontend URL in production.
+const CLIENT_URL = process.env.CLIENT_URL ?? "http://localhost:5173";
+// Hosts like Render assign a port and health-check that exact port, so an
+// injected PORT always wins over the local default.
+const PORT = Number(process.env.PORT) || 3001;
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: { origin: "http://localhost:5173" },
+  cors: { origin: CLIENT_URL },
 });
 
 // socket.id -> Yjs clientID, so a disconnect can clear that user's cursor
@@ -81,6 +88,6 @@ io.on("connection", (socket) => {
   });
 });
 
-httpServer.listen(3001, () => {
-  console.log("Server running on http://localhost:3001");
+httpServer.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}, allowing origin ${CLIENT_URL}`);
 });
