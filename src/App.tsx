@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import Editor from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
@@ -11,26 +11,27 @@ import {
   applyAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness.js";
+import {
+  SERVER_URL,
+  SIGN_IN_URL,
+  clearSession,
+  loadSession,
+  type Session,
+} from "./auth";
 
 const doc = new Y.Doc();
 const text = doc.getText("monaco");
 const awareness = new Awareness(doc);
-// Baked in at build time by Vite, so this must be set on the static host that
-// builds the frontend — not on the server.
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
-const socket = io(SERVER_URL);
 
 // Room comes from the URL path: /doc/:id  ->  "room-1" by default.
 const roomId = window.location.pathname.split("/")[2] || "room-1";
 
-const USER_NAME = "Anonymous " + Math.floor(Math.random() * 100);
+// GitHub has no notion of a cursor color, so it stays random per session.
 const USER_COLOR =
   "#" +
   Math.floor(Math.random() * 0xffffff)
     .toString(16)
     .padStart(6, "0");
-
-awareness.setLocalStateField("user", { name: USER_NAME, color: USER_COLOR });
 
 const styleEl = document.createElement("style");
 document.head.appendChild(styleEl);
@@ -58,6 +59,36 @@ function ensureCursorStyles() {
 type Peer = { clientID: number; name: string; color: string };
 
 function App() {
+  const [session, setSession] = useState<Session | null>(loadSession);
+
+  const signOut = useCallback(() => {
+    clearSession();
+    setSession(null);
+  }, []);
+
+  if (!session) return <SignIn />;
+  return <Workspace session={session} onSignOut={signOut} />;
+}
+
+function SignIn() {
+  return (
+    <div className="app signin">
+      <h1>SyncScript</h1>
+      <p>Collaborative editing, with everyone's real name attached.</p>
+      <a className="signin-button" href={SIGN_IN_URL}>
+        Sign in with GitHub
+      </a>
+    </div>
+  );
+}
+
+function Workspace({
+  session,
+  onSignOut,
+}: {
+  session: Session;
+  onSignOut: () => void;
+}) {
   const [peers, setPeers] = useState<Peer[]>([]);
 
   function handleEditorMount(editor: monaco.editor.IStandaloneCodeEditor) {
@@ -71,6 +102,21 @@ function App() {
   }
 
   useEffect(() => {
+    // The name is now the verified one from the session, not a random string.
+    awareness.setLocalStateField("user", {
+      name: session.user.name,
+      color: USER_COLOR,
+    });
+
+    // The token rides along in the handshake so the server can refuse the
+    // connection outright rather than accepting it and policing it afterwards.
+    const socket = io(SERVER_URL, { auth: { token: session.token } });
+
+    socket.on("connect_error", (err) => {
+      // The server's io.use() turned us away — expired, forged, or missing.
+      if (err.message === "unauthorized") onSignOut();
+    });
+
     // On (re)connect: join our room so the server sends us its state, then tell
     // it which Yjs client we are, so it can evict our cursor when this socket drops.
     const announce = () => {
@@ -78,7 +124,6 @@ function App() {
       socket.emit("hello", doc.clientID);
     };
     socket.on("connect", announce);
-    if (socket.connected) announce();
 
     // --- document ---
     const onDocUpdate = (update: Uint8Array, origin: unknown) => {
@@ -145,13 +190,11 @@ function App() {
       doc.off("update", onDocUpdate);
       awareness.off("update", onAwarenessUpdate);
       awareness.off("change", onAwarenessChange);
-      socket.off("connect", announce);
-      socket.off("doc-sync");
-      socket.off("doc-update");
-      socket.off("awareness");
-      socket.off("user-left");
+      // The socket is created here rather than at module scope, so tearing the
+      // whole instance down also removes every listener registered on it.
+      socket.disconnect();
     };
-  }, []);
+  }, [session, onSignOut]);
 
   return (
     <div className="app">
@@ -171,6 +214,16 @@ function App() {
               </li>
             ))}
           </ul>
+          {session.user.avatar && (
+            <img
+              className="avatar"
+              src={session.user.avatar}
+              alt={session.user.name}
+            />
+          )}
+          <button className="signout" onClick={onSignOut}>
+            Sign out
+          </button>
         </div>
       </header>
       <div className="main">

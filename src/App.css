@@ -78,6 +78,61 @@
   flex-shrink: 0;
 }
 
+.avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #313244;
+}
+
+.signout {
+  padding: 4px 10px;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  background: transparent;
+  color: #a6adc8;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.signout:hover {
+  color: #f38ba8;
+  border-color: #f38ba8;
+}
+
+/* Signed-out landing screen. */
+.signin {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.signin h1 {
+  font-size: 32px;
+  margin: 0;
+  color: #cba6f7;
+}
+
+.signin p {
+  margin: 0 0 16px;
+  color: #a6adc8;
+}
+
+.signin-button {
+  padding: 10px 20px;
+  border-radius: 6px;
+  background: #cba6f7;
+  color: #11111b;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.signin-button:hover {
+  background: #b4a0e8;
+}
+
 /* Remote cursors. y-monaco emits these classes; per-user colors are injected
    at runtime in App.tsx as .yRemoteSelection-<clientID> rules. */
 .yRemoteSelection {
