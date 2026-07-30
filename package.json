@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "server": "tsx server/index.ts"
+    "server": "tsx server/index.ts",
+    "test:convergence": "tsx scripts/convergence-test.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
